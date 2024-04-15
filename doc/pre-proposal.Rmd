@@ -1,0 +1,107 @@
+---
+title: "Quantifying community and environmental drivers of resilience in GoM fisheries"
+output: html_document
+---
+
+
+```{r init, echo = FALSE, warning=FALSE, message=FALSE}
+here::i_am("doc/pre-proposal.Rmd")
+knitr::opts_chunk$set(echo =FALSE, message = FALSE, warning = FALSE)
+# load libraries
+library(tidyverse)
+library(arrow)
+library(here)
+library(googleCloudStorageR)
+library(leaflet)
+library(viridis)
+
+theme_set(theme_minimal())
+# Load in data
+## set the location to the GCS bucket
+ldwfBucket <- arrow::gs_bucket("ldwf_data", json_credentials = readr::read_file(Sys.getenv('GCS_AUTH_FILE')))
+
+## open the dataset 
+ldwfData = open_dataset(
+  sources = ldwfBucket
+  )
+
+## get and set station latlongs
+ldwfStationLatLong = ldwfData %>% 
+  select(station, latitude, longitude) %>% 
+  group_by(station, latitude, longitude) %>% 
+  summarise(n = n()) %>% 
+  group_by(station) %>% 
+  collect() %>% 
+  slice_max(n) %>% 
+  filter(station != 8888)
+
+
+## subset the database by station
+ldwfStationSumm = ldwfData %>% 
+  select(station, date, gear) %>% 
+  collect() %>% 
+  separate_wider_position(date, widths = c(year = 4, month = 2, day = 2)) %>%
+  tidyr::unite("date", year:day, sep = "-") %>% 
+  mutate(date = as.Date(date, format = "%Y-%m-%d")) %>% 
+  unique() %>% 
+  group_by(station, gear) %>% 
+  summarise(samples = n()) %>% 
+  filter(station != 8888) %>% 
+  left_join(ldwfStationLatLong, by = "station") %>% 
+  filter(longitude != 0)
+
+```
+
+Questions of interest:
+
+- How does resilience in ecological communities (i.e., fishes, nekton) change over time and space?
+
+- What is the spatial response of communities to local and regional pulse or press disturbances?
+
+- 
+
+Potential data sources:
+
+- state-based fisheries-inependent monitoring data. LDWF monitoring data outlined here as an example
+
+
+
+
+
+
+Details of submission:
+
+- Due date: May 23, 2024
+
+
+# Initial data availability
+
+```{r gear maps, fig.height=5, fig.width=7, fig.cap="Preliminary assessment of unique samples in LA DWF fisheries-independent sampling. *This data only goes until 2019."}
+# get map base
+LA_map = map_data('state', region = 'Louisiana')
+
+LA_map %>% 
+ggplot() +
+  geom_polygon(aes(long, lat), fill = NA, color = 'black')+
+  coord_sf()+
+  geom_point(data = ldwfStationSumm %>% mutate(gear = as.character(gear)), aes(x =longitude, y = latitude, size = log10(samples), fill = gear), alpha = 0.5, shape = 21) +
+  guides(fill = 'none')+
+  scale_y_continuous(limits = c(NA, 31))+
+  scale_color_viridis(discrete = TRUE)
+
+```
+
+## Example community data
+
+```{r station 1000 summary}
+summ1000 = ldwfData %>% 
+  select(special, date, station, len_int, len_m, len_m_description, t_num, common_name, gear_desc, num_meas) %>%
+  filter(station == 1000) %>% 
+  collect() %>% 
+  separate_wider_position(date, widths = c(year = 4, month = 2, day = 2)) %>%
+  tidyr::unite("date", year:day, sep = "-") %>% 
+  mutate(date = as.Date(date, format = "%Y-%m-%d"))
+
+
+
+```
