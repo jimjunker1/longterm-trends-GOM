@@ -3,7 +3,6 @@ title: "Quantifying community and environmental drivers of resilience in GoM fis
 output: html_document
 ---
 
-
 ```{r init, echo = FALSE, warning=FALSE, message=FALSE}
 here::i_am("doc/pre-proposal.Rmd")
 knitr::opts_chunk$set(echo =FALSE, message = FALSE, warning = FALSE)
@@ -14,6 +13,7 @@ library(here)
 library(googleCloudStorageR)
 library(leaflet)
 library(viridis)
+library(vegan)
 
 theme_set(theme_minimal())
 # Load in data
@@ -62,7 +62,7 @@ Questions of interest:
 
 Potential data sources:
 
-- state-based fisheries-inependent monitoring data. LDWF monitoring data outlined here as an example
+- state-based fisheries-independent monitoring data. LDWF monitoring data outlined here as an example
 
 
 
@@ -76,24 +76,10 @@ Details of submission:
 
 # Initial data availability
 
-```{r gear maps, fig.height=5, fig.width=7, fig.cap="Preliminary assessment of unique samples in LA DWF fisheries-independent sampling. *This data only goes until 2019."}
+```{r gear maps, fig.height=5, fig.width=7, fig.cap="Preliminary assessment of unique samples in LA DWF fisheries-independent sampling. Dots are scaled in size by the number of individual sample dates present in the data set and the fill color represents the gear type. Gear types:  *This data only goes until 2019 and coordinate system has not been confirmed for exact locations."}
 # get map base
 LA_map = map_data('state', region = 'Louisiana')
-
-LA_map %>% 
-ggplot() +
-  geom_polygon(aes(long, lat), fill = NA, color = 'black')+
-  coord_sf()+
-  geom_point(data = ldwfStationSumm %>% mutate(gear = as.character(gear)), aes(x =longitude, y = latitude, size = log10(samples), fill = gear), alpha = 0.5, shape = 21) +
-  guides(fill = 'none')+
-  scale_y_continuous(limits = c(NA, 31))+
-  scale_color_viridis(discrete = TRUE)
-
-```
-
-## Example community data
-
-```{r station 1000 summary}
+# summarise a single site
 summ1000 = ldwfData %>% 
   select(special, date, station, len_int, len_m, len_m_description, t_num, common_name, gear_desc, num_meas) %>%
   filter(station == 1000) %>% 
@@ -102,6 +88,29 @@ summ1000 = ldwfData %>%
   tidyr::unite("date", year:day, sep = "-") %>% 
   mutate(date = as.Date(date, format = "%Y-%m-%d"))
 
+LA_map %>% 
+ggplot() +
+  geom_polygon(aes(long, lat), fill = NA, color = 'black')+
+  coord_sf()+
+  geom_point(data = ldwfStationSumm %>% mutate(gear = as.character(gear)), aes(x =longitude, y = latitude, size = log10(samples), fill = gear), alpha = 0.5, shape = 21) +
+  geom_point(data = summ1000, aes(x =longitude, y = latitude), color = 'red', shape = 21, size = 4) +
+  guides(fill = 'none')+
+  scale_y_continuous(limits = c(NA, 32))+
+  scale_color_viridis(discrete = TRUE)
 
+```
 
+## Example community data
+
+```{r station 1000 summary}
+
+comm1000 = summ1000 %>% 
+  group_by(date, common_name) %>% 
+  summarise(num_meas = sum(num_meas, na.rm = TRUE)) %>% 
+  pivot_wider(names_from = 'common_name', values_from = 'num_meas', values_fill = 0) %>% 
+  ungroup %>% 
+  rowwise %>% 
+  dplyr::filter(rowSums(. %>% c_across(select(.,-date))) > 0)
+
+nmds1000 = metaMDS(comm = comm1000 %>% ungroup %>%  select(-date))
 ```
