@@ -95,7 +95,8 @@ ggplot() +
   geom_point(data = ldwfStationSumm %>% mutate(gear = as.character(gear)), aes(x =longitude, y = latitude, size = log10(samples), fill = gear), alpha = 0.5, shape = 21) +
   geom_point(data = summ1000, aes(x =longitude, y = latitude), color = 'red', shape = 21, size = 4) +
   guides(fill = 'none')+
-  scale_y_continuous(limits = c(NA, 32))+
+  # scale_y_continuous(limits = c(NA, 32))+
+  coord_cartesian(ylim = c(NA, 32))+
   scale_color_viridis(discrete = TRUE)
 
 ```
@@ -109,8 +110,22 @@ comm1000 = summ1000 %>%
   summarise(num_meas = sum(num_meas, na.rm = TRUE)) %>% 
   pivot_wider(names_from = 'common_name', values_from = 'num_meas', values_fill = 0) %>% 
   ungroup %>% 
-  rowwise %>% 
-  dplyr::filter(rowSums(. %>% c_across(select(.,-date))) > 0)
+  select(-date) %>% 
+  filter(rowSums(.)>0) #%>% 
+  # .[-c(657,1002,1266),]
 
-nmds1000 = metaMDS(comm = comm1000 %>% ungroup %>%  select(-date))
+dist1000_bc = vegdist(comm1000, method = 'bray')
+
+
+any(no.shared(comm1000))
+rerun = TRUE
+if(rerun){
+nmds1000 = metaMDS(comm = dist1000_bc, noshare = TRUE, parallel = 5)
+nmds1000.2 = metaMDS(comm = dist1000_bc,previous.best = nmds1000, parallel = 5)
+} else{
+  nmds1000 = readRDS(here::here("data/nmds1000.rds"))
+}
+
+ plot(nmds1000.2)
+
 ```
