@@ -15,6 +15,7 @@ library(leaflet)
 library(viridis)
 library(vegan)
 
+options(mc.cores = parallel::detectCores())
 theme_set(theme_minimal())
 # Load in data
 ## set the location to the GCS bucket
@@ -76,7 +77,7 @@ Details of submission:
 
 # Initial data availability
 
-```{r gear maps, fig.height=5, fig.width=7, fig.cap="Preliminary assessment of unique samples in LA DWF fisheries-independent sampling. Dots are scaled in size by the number of individual sample dates present in the data set and the fill color represents the gear type. Gear types:  *This data only goes until 2019 and coordinate system has not been confirmed for exact locations."}
+```{r gear maps, fig.height=5, fig.width=7, fig.cap="Preliminary assessment of unique samples in LA DWF fisheries-independent sampling. Dots are scaled in size by the number of individual sample dates present in the data set and the fill color represents the gear type. The large red dot represents a single station whose dynamics are highlighted below. *This data only goes until 2019 and coordinate system has not been confirmed for exact locations."}
 # get map base
 LA_map = map_data('state', region = 'Louisiana')
 # summarise a single site
@@ -93,7 +94,7 @@ ggplot() +
   geom_polygon(aes(long, lat), fill = NA, color = 'black')+
   coord_sf()+
   geom_point(data = ldwfStationSumm %>% mutate(gear = as.character(gear)), aes(x =longitude, y = latitude, size = log10(samples), fill = gear), alpha = 0.5, shape = 21) +
-  geom_point(data = summ1000, aes(x =longitude, y = latitude), color = 'red', shape = 21, size = 4) +
+  geom_point(data = ldwfStationSumm %>% filter(station == 1000), aes(x =longitude, y = latitude), color = 'red', shape = 21, fill = 'white', size = 5, stroke = 1.1) +
   guides(fill = 'none')+
   # scale_y_continuous(limits = c(NA, 32))+
   coord_cartesian(ylim = c(NA, 32))+
@@ -107,25 +108,68 @@ ggplot() +
 
 comm1000 = summ1000 %>% 
   group_by(date, common_name) %>% 
-  summarise(num_meas = sum(num_meas, na.rm = TRUE)) %>% 
+  summarise(num_meas = sum(num_meas, na.rm = TRUE))
+
+comm1000_catch = comm1000 %>% 
+  group_by(common_name) %>% 
+  mutate(pres = ifelse(num_meas >0, 1,0))
+
+comm1000_presWide = comm1000_catch %>% 
+  ungroup %>%
+  select(-num_meas) %>% 
+  pivot_wider(names_from = 'common_name', values_from = 'pres', values_fill = 0)
+
+comm1000_wide = comm1000 %>% 
   pivot_wider(names_from = 'common_name', values_from = 'num_meas', values_fill = 0) %>% 
   ungroup %>% 
   select(-date) %>% 
-  filter(rowSums(.)>0) #%>% 
-  # .[-c(657,1002,1266),]
+  filter(rowSums(.)>0)
 
-dist1000_bc = vegdist(comm1000, method = 'bray')
+comm1000_dom = comm1000 %>% 
+  ungroup %>% 
+  group_by(common_name) %>% 
+  summarise(num_meas = sum(num_meas)) %>% 
+  mutate(rel_n = num_meas/sum(num_meas))
 
+comm1000_domVec = comm1000_dom %>% 
+  arrange(desc(rel_n)) %>%
+  slice(1:7) %>%
+  select(common_name) %>%
+  unlist
 
-any(no.shared(comm1000))
-rerun = TRUE
-if(rerun){
-nmds1000 = metaMDS(comm = dist1000_bc, noshare = TRUE, parallel = 5)
-nmds1000.2 = metaMDS(comm = dist1000_bc,previous.best = nmds1000, parallel = 5)
-} else{
-  nmds1000 = readRDS(here::here("data/nmds1000.rds"))
-}
+comm1000_domScaled = comm1000 %>% 
+  filter(common_name %in% comm1000_domVec) %>% 
+  pivot_wider(names_from = 'common_name', values_from = 'num_meas', values_fill = 0) %>% 
+  ungroup %>% 
+  mutate(across(where(is.numeric), scale)) %>% 
+  pivot_longer(-date, names_to = 'common_name', values_to ='n_scaled')
 
- plot(nmds1000.2)
+comm1000_domScaled %>% 
+  ggplot()+
+  geom_point(aes(x = date, y = n_scaled, color = common_name))+
+  geom_path(aes(x = date, y = n_scaled, color = common_name))+
+  scale_color_viridis(discrete = TRUE)+
+  coord_cartesian(ylim = c(0, 10))+
+  facet_wrap(~common_name, scales = 'free_y')
+
+# dist1000_bc = vegdist(comm1000, method = 'bray')
+# conn1000_bc = distconnected(dist1000_bc, toolong = 0.9)
+# comm1000_mod = comm1000[which(conn1000_bc == 1),]
+# 
+# rerun = TRUE
+# if(rerun){
+# set.seed(1312)
+# nmds1000 = metaMDS(comm = comm1000, k = 2, autotransform = TRUE,
+#                    noshare = TRUE, parallel = 12,
+#                    try = 30, trymax = 100,maxit = 500,
+#                    sfgrmin = 1e-9, sratmax= 0.99999,
+#                    tidy = TRUE)
+# nmds1000.2 = metaMDS(comm = comm1000_mod,previous.best = nmds1000, parallel = 12)
+# saveRDS(nmds1000.2, here::here("data/nmds1000.rds"))
+# } else{
+#   nmds1000 = readRDS(here::here("data/nmds1000.rds"))
+# }
+# 
+#  plot(nmds1000.2)
 
 ```
